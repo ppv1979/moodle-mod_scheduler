@@ -296,7 +296,7 @@ $string['appointmentmode'] = 'Setting the appointment mode';
 $string['appointmentmode_help']='<p>You may choose here some variants in the way appointments can be taken. </p>
 <p><ul>
 <li><b>"One single appointment" mode:</b> The student can only have a single appointment in this module. Once it has been seen by the teacher, he will not be allowed to apply for any further meeting. The only way to reset ability of a student to apply is to delete the old "seen" records.</li>
-<li><b>"One at a time" mode:</b> The student can apply only to one (future) date. Once the meeting is over and concluded, he can appoint back. this mode is usefull to arbitrate project appointments on long run projects, specially when multiple phases of appointements are to be offered. 
+<li><b>"One at a time" mode:</b> The student can apply only to one (future) date. Once the meeting is over and concluded, he can appoint back. This mode is useful to arbitrate project appointments on long run projects, specially when multiple phases of appointements are to be offered. 
 </li>
 </ul>
 </p>';
@@ -328,12 +328,12 @@ $string['notifications_help']='When this option is enabled, teachers and student
 $string['reuse_help']='
 A <i>reuseable</i> slot will remain in the scheduler even a student or the teacher revokes an appointment. The freed slot is available again for appointing.</p>
 
-<p>A <i>volatile</i> slot will be automatically deleted in the above cases if it has to start to close to the current dat (it is considered you may not want to add a constraint so close to "right now"). The guard delay can be set by the instance-scoped configuration parameter "Reuse guard time".
+<p>A <i>volatile</i> slot will be automatically deleted in the above cases if it has to start to close to the current date (it is considered you may not want to add a constraint so close to "right now"). The guard delay can be set by the instance-scoped configuration parameter "Reuse guard time".
 </p>';
 
 $string['reuseguardtime_help']='
 <p>This parameter sets up the guard time for keeping volatile slots.</p>
-<p>When a slot is declared as volatile (not reusable), it will be automatically deleted when a student changes is appointment assignation, feeing completely the slot, or when a teacher revokes all appointments on it. The deletion takes place when the slot starts too close to the actual date.</p>
+<p>When a slot is declared as volatile (not reusable), it will be automatically deleted when a student changes is appointment assignation, freeing completely the slot, or when a teacher revokes all appointments on it. The deletion takes place when the slot starts too close to the actual date.</p>
 <p>The parameter specifies the delay, from "now on", under which a freed slot will be deleted and will not be available for further appointments.</p>';
 
 $string['staffrolename_help']='
