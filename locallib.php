@@ -19,45 +19,6 @@ require_once(dirname(__FILE__).'/model/scheduler_appointment.php');
 
 
 /**
- * Parameter $local added by power-web.at
- * When local Date is needed the $local Param must be set to 1
- * @param int $date a timestamp
- * @param int $local
- * @todo check consistence
- * @return string printable date
- */
-function scheduler_userdate($date, $local=0) {
-    if ($date == 0) {
-        return '';
-    } else {
-        return userdate($date, get_string('strftimedaydate'));
-    }
-}
-
-/**
- * Parameter $local added by power-web.at
- * When local Time is needed the $local Param must be set to 1
- * @param int $date a timestamp
- * @param int $local
- * @todo check consistence
- * @return string printable time
- */
-function scheduler_usertime($date, $local=0) {
-    if ($date == 0) {
-        return '';
-    } else {
-        $timeformat = get_user_preferences('calendar_timeformat');//get user config
-        if(empty($timeformat)){
-            $timeformat = get_config(NULL,'calendar_site_timeformat');//get calendar config	if above not exist
-        }
-        if(empty($timeformat)){
-            $timeformat = get_string('strftimetime');//get locale default format if both above not exist
-        }
-        return userdate($date, $timeformat);
-    }
-}
-
-/**
  * get list of attendants for slot form
  * @param int $cmid the course module
  * @return array of moodle user records
@@ -68,21 +29,6 @@ function scheduler_get_attendants($cmid){
         user_picture::fields('u'), 'u.lastname, u.firstname',
         '', '', '', '', false, false, false);
     return $attendants;
-}
-
-/**
- * get list of possible attendees (i.e., users that can make an appointment)
- * @param object $cm the course module
- * @param $groups - single group or array of groups - only return
- *                  users who are in one of these group(s).
- * @return array of moodle user records
- */
-function scheduler_get_possible_attendees($cm, $groups=''){
-
-    $context = context_module::instance($cm->id);
-    $attendees = get_users_by_capability($context, 'mod/scheduler:appoint', '', 'lastname, firstname', '', '', $groups, '', false, false, false);
-
-    return $attendees;
 }
 
 /**
@@ -125,78 +71,6 @@ function scheduler_get_conflicts($schedulerid, $starttime, $endtime, $teacher=0,
     return $conflicting;
 }
 
-/**
- * Returns count of slots that would overlap with this
- * use it as a test function before toggling to exclusive
- * @param int $schedulerid the actual scheduler instance
- * @param int $starttime the starttime identifying the slot
- * @param int $endtime the endtime of the period
- * @param int $teacher the teacher constraint, if null stands for "all teachers"
- * @return int the number of compatible slots
- * @uses $CFG
- * @uses $DB
- */
-function scheduler_get_consumed($schedulerid, $starttime, $endtime, $teacherid=0) {
-    global $CFG, $DB;
-
-    $teacherScope = ($teacherid != 0) ? " teacherid = '{$teacherid}' AND " : '' ;
-    $sql = "
-        SELECT
-        COUNT(*)
-        FROM
-        {scheduler_slots} s,
-        {scheduler_appointment} a
-        WHERE
-        a.slotid = s.id AND
-        schedulerid = {$schedulerid} AND
-        {$teacherScope}
-        ( (s.starttime <= {$starttime} AND
-        {$starttime} < s.starttime + s.duration * 60) OR
-        (s.starttime < {$endtime} AND
-        {$endtime} <= s.starttime + s.duration * 60) OR
-        (s.starttime >= {$starttime} AND
-        s.starttime + s.duration * 60 <= {$endtime}) )
-        ";
-    $count = $DB->count_records_sql($sql, NULL);
-    return $count;
-}
-
-/**
- * retreives the available slots in several situations with a complex query
- * @param int $studentid
- * @param int $schedulerid
- * @param boolean $studentside changes query if we are getting slots in student context
- * @uses $CFG
- * @uses $DB
- */
-function scheduler_get_available_slots($studentid, $schedulerid, $studentside=false){
-    global $CFG, $DB;
-
-    // more compatible tryout
-    $slots = $DB->get_records('scheduler_slots', array('schedulerid' => $schedulerid), 'starttime');
-    $retainedslots = array();
-    if ($slots){
-        foreach($slots as $slot){
-            $slot->population = $DB->count_records('scheduler_appointment', array('slotid' => $slot->id));
-            $slot->appointed = ($slot->population > 0);
-            $slot->attended = $DB->record_exists('scheduler_appointment', array('slotid' => $slot->id, 'attended' => 1));
-            if ($studentside){
-                $slot->appointedbyme = $DB->record_exists('scheduler_appointment', array('slotid' => $slot->id, 'studentid' => $studentid));
-                if ($slot->appointedbyme) {
-                    $retainedslots[] = $slot;
-                    continue;
-                }
-            }
-            // both side, slot is not complete
-            if ($slot->exclusivity == 0 or ($slot->exclusivity > 0 and $slot->population < $slot->exclusivity)){
-                $retainedslots[] = $slot;
-                continue;
-            }
-        }
-    }
-
-    return $retainedslots;
-}
 
 /**
  * checks if user has an appointment in this scheduler
@@ -260,134 +134,6 @@ function scheduler_get_appointed($slotid){
     return $DB->get_records_sql($sql, array($slotid));
 }
 
-/**
- * fully deletes a slot with all dependancies
- * @param int slotid
- * @param stdClass $scheduler (optional)
- * @uses $DB
- */
-function scheduler_delete_slot($slotid, $scheduler=null){
-    global $DB;
-
-    if ($slot = $DB->get_record('scheduler_slots', array('id' => $slotid))) {
-        scheduler_delete_calendar_events($slot);
-    }
-    $DB->delete_records('scheduler_slots', array('id' => $slotid));
-    $DB->delete_records('scheduler_appointment', array('slotid' => $slotid));
-
-    if ($slot) {
-        if (!$scheduler){ // fetch optimization
-            $scheduler = $DB->get_record('scheduler', array('id' => $slot->schedulerid));
-        }
-        scheduler_update_grades($scheduler); // generous, but works
-    }
-}
-
-/**
- * get appointment records for a slot
- * @param int $slotid
- * @return an array of appointments
- * @uses $CFG
- * @uses $DB
- */
-function scheduler_get_appointments($slotid){
-    global $CFG, $DB;
-
-    $apps = $DB->get_records('scheduler_appointment', array('slotid' => $slotid));
-
-    return $apps;
-}
-
-/**
- * a high level api function for deleting an appointment, and do
- * what ever is needed
- * @param int $appointmentid
- * @param object $slot
- * @param object $scheduler
- * @uses $DB
- */
-function scheduler_delete_appointment($appointmentid, $slot=null, $scheduler=null){
-    global $DB;
-
-    if (!$oldrecord = $DB->get_record('scheduler_appointment', array('id' => $appointmentid))) return ;
-
-    if (!$slot){ // fetch optimization
-        $slot = $DB->get_record('scheduler_slots', array('id' => $oldrecord->slotid));
-    }
-    if($slot){
-        // delete appointment
-        if (!$DB->delete_records('scheduler_appointment', array('id' => $appointmentid))) {
-            print_error('Couldn\'t delete old choice from database');
-        }
-        if (!$scheduler){ // fetch optimization
-            $scheduler = $DB->get_record('scheduler', array('id' => $slot->schedulerid));
-        }
-        scheduler_update_grades($scheduler, $oldrecord->studentid);
-        // not reusable slot. Delete it if slot is too near and has no more appointments.
-        if ($slot->reuse == 0) {
-            $consumed = scheduler_get_consumed($slot->schedulerid, $slot->starttime, $slot->starttime + $slot->duration * 60);
-            if (!$consumed){
-                if (time() > 0 ) { //  ULPGC ecastro, volatiles are deleted always   $slot->starttime - $scheduler->reuseguardtime * 3600){
-                    if (!$DB->delete_records('scheduler_slots', array('id' => $slot->id))) {
-                        print_error('Couldn\'t delete old choice from database');
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * get the last considered location in this scheduler
- * @param reference $scheduler
- * @uses $USER
- * @uses $DB
- * @return the last known location for the current user (teacher)
- */
-function scheduler_get_last_location(&$scheduler){
-    global $USER, $DB;
-
-    $lastlocation = '';
-    $select = 'SELECT appointmentlocation FROM {scheduler_slots} WHERE schedulerid = ? AND teacherid = ? ORDER BY timemodified DESC';
-    $lastlocation = $DB->get_field_sql($select, array($scheduler->id, $USER->id), IGNORE_MULTIPLE);
-    return $lastlocation;
-}
-
-/**
- * frees all slots unapppointed that are in the past
- * @param int $schedulerid
- * @param int $now give a date reference for measuring the "past" ! If 0, uses current time
- * @uses $CFG
- * @uses $DB
- * @return void
- */
-function scheduler_free_late_unused_slots($schedulerid, $now=0){
-    global $CFG, $DB;
-
-    if(!$now) {
-        $now = time();
-    }
-    $sql = '
-        SELECT DISTINCT
-        s.id
-        FROM
-        {scheduler_slots} s
-        LEFT JOIN
-        {scheduler_appointment} a
-        ON
-        s.id = a.slotid
-        WHERE
-        a.studentid IS NULL AND
-        s.schedulerid = ? AND
-        starttime < ?
-        ';
-    $to_delete = $DB->get_records_sql($sql, array($schedulerid, $now));
-    if ($to_delete){
-        list($usql, $params) = $DB->get_in_or_equal(array_keys($to_delete));
-        $DB->delete_records_select('scheduler_slots', " id $usql ", $params);
-    }
-}
-
 
 /// Events related functions
 
@@ -401,7 +147,7 @@ function scheduler_free_late_unused_slots($schedulerid, $now=0){
 function scheduler_delete_calendar_events($slot) {
     global $DB;
 
-    $scheduler = $DB->get_record('scheduler', array('id'=>$slot->schedulerid));
+    $scheduler = $DB->get_record('scheduler', array('id' => $slot->schedulerid));
 
     if (!$scheduler) return false ;
 
@@ -417,123 +163,35 @@ function scheduler_delete_calendar_events($slot) {
 
 
 /**
- * a utility function for formatting grades for display
- * @param reference $scheduler
- * @param string $grade the grade to be displayed
- * @param boolean $short formats the grade in short form (result empty if grading is
- * not used, or no grade is available; parantheses are put around the grade if it is present)
- * @return string the formatted grade
- */
-function scheduler_format_grade(&$scheduler, $grade, $short=false){
-
-    global $DB;
-
-    $result = '';
-    if ($scheduler->scale == 0 || is_null($grade) ){
-        // scheduler doesn't allow grading, or no grade entered
-        if (!$short) {
-            $result = get_string('nograde');
-        }
-    }
-    else {
-        if ($scheduler->scale > 0) {
-            // numeric grades
-            $result .= $grade;
-            if (strlen($grade)>0){
-                $result .=  '/' . $scheduler->scale;
-            }
-        }
-        else{
-            // grade on scale
-            if ($grade > 0) {
-                $scaleid = - ($scheduler->scale);
-                if ($scale = $DB->get_record('scale', array('id'=>$scaleid))) {
-                    $levels = explode(',',$scale->scale);
-                    if ($grade <= count($levels)) {
-                        $result .= $levels[$grade-1];
-                    }
-                }
-            }
-        }
-        if ($short && (strlen($result)>0)) {
-            $result = '('.$result.')';
-        }
-    }
-    return $result;
-}
-
-
-/**
- * A utility function for producing grading lists (for use in formslib)
- *
- * Note that the selection list will contain a "nothing selected" option
- * with key -1 which will be displayed as "No grade".
- *
- * @param reference $scheduler
- * @return the html selection element for a grading list
- */
-function scheduler_get_grading_choices(&$scheduler) {
-    global $DB;
-    if ($scheduler->scale > 0){
-        $scalegrades = array();
-        for($i = 0 ; $i <= $scheduler->scale ; $i++) {
-            $scalegrades[$i] = $i;
-        }
-    }
-    else {
-        $scaleid = - ($scheduler->scale);
-        if ($scale = $DB->get_record('scale', array('id'=>$scaleid))) {
-            $scalegrades = make_menu_from_list($scale->scale);
-        }
-    }
-    $scalegrades = array(-1 => get_string('nograde')) + $scalegrades;
-    return $scalegrades;
-}
-
-
-/**
- * A utility function for making grading lists
- *
- * Note that the selection list will contain a "nothing selected" option
- * with key -1 which will be displayed as "No grade".
- *
- * @param reference $scheduler
- * @param string $id the form field id
- * @param string $selected the selected value
- * @return the html selection element for a grading list
- */
-function scheduler_make_grading_menu(&$scheduler, $id, $selected = '') {
-    global $DB;
-    $scalegrades = scheduler_get_grading_choices($scheduler);
-    $menu = html_writer::select($scalegrades, $id, $selected, false);
-    return $menu;
-}
-
-
-/**
  * Construct an array with subtitution rules for mail templates, relating to
  * a single appointment. Any of the parameters can be null.
- * @param object $scheduler The scheduler instance
- * @param object $slot The slot data, obtained with get_record().
+ * @param scheduler_instance $scheduler The scheduler instance
+ * @param scheduler_slot $slot The slot data as an MVC object
  * @param user $attendant A {@link $USER} object describing the attendant (teacher)
  * @param user $attendee A {@link $USER} object describing the attendee (student)
+ * @param object $course A course object relating to the ontext of the message
+ * @param object $recipient A {@link $USER} object describing the recipient of the message (used for determining the message language)
  * @return array A hash with mail template substitutions
  */
-function scheduler_get_mail_variables ($scheduler, $slot, $attendant, $attendee) {
+function scheduler_get_mail_variables (scheduler_instance $scheduler, scheduler_slot $slot, $attendant, $attendee, $course, $recipient) {
 
     global $CFG;
+
+    $lang = scheduler_get_message_language($recipient, $course);
+    // Force any string formatting to happen in the target language.
+    $oldlang = force_current_language($lang);
 
     $vars = array();
 
     if ($scheduler) {
         $vars['MODULE']     = $scheduler->name;
-        $vars['STAFFROLE']  = scheduler_get_teacher_name($scheduler);
+        $vars['STAFFROLE']  = $scheduler->get_teacher_name();
     }
     if ($slot) {
-        $vars ['DATE']     = userdate($slot->starttime,get_string('strftimedate'));
-        $vars ['TIME']     = userdate($slot->starttime,get_string('strftimetime'));
-        $vars ['ENDTIME']  = userdate($slot->starttime+$slot->duration*60, get_string('strftimetime'));
-        $vars ['LOCATION'] = $slot->appointmentlocation;
+        $vars ['DATE']     = userdate($slot->starttime, get_string('strftimedate'));
+        $vars ['TIME']     = userdate($slot->starttime, get_string('strftimetime'));
+        $vars ['ENDTIME']  = userdate($slot->endtime, get_string('strftimetime'));
+        $vars ['LOCATION'] = format_string($slot->appointmentlocation);
     }
     if ($attendant) {
         $vars['ATTENDANT']     = fullname($attendant);
@@ -543,6 +201,9 @@ function scheduler_get_mail_variables ($scheduler, $slot, $attendant, $attendee)
         $vars['ATTENDEE']     = fullname($attendee);
         $vars['ATTENDEE_URL'] = $CFG->wwwroot.'/user/view.php?id='.$attendee->id.'&course='.$scheduler->course;
     }
+
+    // Reset language settings.
+    force_current_language($oldlang);
 
     return $vars;
 
@@ -558,7 +219,7 @@ function scheduler_get_mail_variables ($scheduler, $slot, $attendant, $attendee)
  */
 function scheduler_print_user($user, $course, $messageselect=false, $return=false) {
 
-    global $CFG, $USER, $OUTPUT ;
+    global $CFG, $USER, $OUTPUT;
 
     $output = '';
 
@@ -660,20 +321,6 @@ function scheduler_print_user($user, $course, $messageselect=false, $return=fals
     }
 }
 
-function scheduler_get_teacher_name($scheduler) {
-    $name = $scheduler->staffrolename;
-    if (empty($name)) {
-        $name = get_string('teacher', 'scheduler');
-    }
-    return $name;
-}
-
-function scheduler_group_scheduling_enabled($course, $cm) {
-    global $CFG;
-    $globalenable = (bool) $CFG->scheduler_groupscheduling;
-    $localenable = (groupmode($course, $cm) > 0);
-    return $globalenable && $localenable;
-}
 
 function scheduler_has_teachers($context) {
     $teachers = get_users_by_capability ($context, 'mod/scheduler:attend', 'u.id');

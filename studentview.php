@@ -13,25 +13,19 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once($CFG->dirroot.'/mod/scheduler/studentview.controller.php');
 
+\mod_scheduler\event\booking_form_viewed::create_from_scheduler($scheduler)->trigger();
+
 // Clean all late slots (for everybody).
-scheduler_free_late_unused_slots($scheduler->id);
+$scheduler->free_late_unused_slots();
 
 $mygroups = groups_get_all_groups($scheduler->courseid, $USER->id, $cm->groupingid, 'g.id, g.name');
 
-// Printing the heading.
+// Print intro.
+echo $output->mod_intro($scheduler);
 
-echo $output->heading(format_string($scheduler->name), 2);
+// Get past (attended) slots.
 
-if (trim(strip_tags($scheduler->intro))) {
-    echo $output->box_start('mod_introbox');
-    echo format_module_intro('scheduler', $scheduler->get_data(), $scheduler->cmid);
-    echo $output->box_end();
-}
-
-
-// Get past slots.
-
-$pastslots = $scheduler->get_booked_slots($USER->id, true, false, false);
+$pastslots = $scheduler->get_attended_slots_for_student($USER->id);
 
 if (count($pastslots) > 0) {
     $slottable = new scheduler_slot_table($scheduler, $scheduler->uses_grades());
@@ -50,11 +44,11 @@ if (count($pastslots) > 0) {
         $slottable->add_slot($pastslot, $appointment, $others);
     }
 
-    echo $output->heading(get_string('pastslots', 'scheduler'), 3);
+    echo $output->heading(get_string('attendedslots', 'scheduler'), 3);
     echo $output->render($slottable);
 }
 
-$upcomingslots = $scheduler->get_booked_slots($USER->id, false, true, false);
+$upcomingslots = $scheduler->get_upcoming_slots_for_student($USER->id);
 
 if (count($upcomingslots) > 0) {
     $slottable = new scheduler_slot_table($scheduler, $scheduler->uses_grades());
