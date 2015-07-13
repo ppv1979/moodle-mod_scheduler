@@ -12,14 +12,16 @@
 defined('MOODLE_INTERNAL') || die();
 
 require_once('modellib.php');
+require_once($CFG->dirroot . '/grade/lib.php');
+
 
 class scheduler_instance extends mvc_record_model {
 
     protected $cm = null;
+    protected $courserec = null;
     protected $context = null;
     protected $groupmode;
     protected $slots;
-    protected $scalecache = null;
 
     protected function get_table() {
         return 'scheduler';
@@ -28,7 +30,7 @@ class scheduler_instance extends mvc_record_model {
     protected function __construct() {
         parent::__construct();
         $this->slots = new mvc_child_list($this, 'scheduler_slots', 'schedulerid',
-                        new scheduler_slot_factory($this));
+            new scheduler_slot_factory($this));
     }
 
     /**
@@ -86,10 +88,28 @@ class scheduler_instance extends mvc_record_model {
     }
 
     /**
+     * Retrieve the course module record of this scheduler
+     */
+    public function get_cm() {
+        return $this->cm;
+    }
+
+    /**
      * Retrieve the course id of this scheduler
      */
     public function get_courseid() {
         return $this->data->course;
+    }
+
+    /**
+     * Retrieve the course record of this scheduler
+     */
+    public function get_courserec() {
+        global $DB;
+        if (is_null($this->courserec)) {
+            $this->courserec = $DB->get_record('course', array('id' => $this->get_courseid()), '*', MUST_EXIST);
+        }
+        return $this->courserec;
     }
 
     /**
@@ -158,7 +178,7 @@ class scheduler_instance extends mvc_record_model {
      */
     public function is_group_scheduling_enabled() {
         global $CFG;
-        $globalenable = (bool) $CFG->scheduler_groupscheduling;
+        $globalenable = (bool) get_config('mod_scheduler', 'groupscheduling');
         $localenable = $this->groupmode > 0;
         return $globalenable && $localenable;
     }
@@ -197,23 +217,141 @@ class scheduler_instance extends mvc_record_model {
         return ($this->scale != 0);
     }
 
-    public function get_scale_levels() {
-        global $DB;
+    /**
+     * Return grade for given user.
+     * This does not take gradebook data into account.
+     *
+     * @param int $schedulerid id of scheduler
+     * @param int $userid user id
+     * @return int grade of this user
+     */
+    public function get_user_grade($userid) {
+        $grades = $this->get_user_grades($userid);
+        return $grades[$userid]->rawgrade;
+    }
 
-        if (is_null($this->scalecache)) {
-            $this->scalecache = array();
-            if ($this->scale < 0) {
-                $scaleid = -($this->scale);
-                if ($scale = $DB->get_record('scale', array('id' => $scaleid))) {
-                    $levels = explode(',', $scale->scale);
-                    foreach ($levels as $id => $value) {
-                        $this->scalecache[$id+1] = $value;
-                    }
+    /**
+     * Return grade for given user or all users.
+     *
+     * @param int $schedulerid id of scheduler
+     * @param int $userid optional user id, 0 means all users
+     * @return array array of grades, false if none
+     */
+    public function get_user_grades($userid=0) {
+        global $CFG, $DB;
+
+        if ($this->scale == 0) {
+            return false;
+        }
+
+        $usersql = '';
+        $params = array();
+        if ($userid) {
+            $usersql = ' AND a.studentid = :userid';
+            $params['userid'] = $userid;
+        }
+        $params['sid'] = $this->id;
+
+        $sql = 'SELECT a.id, a.studentid, a.grade '.
+               'FROM {scheduler_slots} s JOIN {scheduler_appointment} a ON s.id = a.slotid '.
+               'WHERE s.schedulerid = :sid AND a.grade IS NOT NULL'.$usersql;
+
+        $grades = $DB->get_records_sql($sql, $params);
+        $finalgrades = array();
+        $gradesums = array();
+
+        foreach ($grades as $grade) {
+            $gradesums[$grade->studentid] = new stdClass();
+            $finalgrades[$grade->studentid] = new stdClass();
+            $finalgrades[$grade->studentid]->userid = $grade->studentid;
+        }
+        if ($this->scale > 0) { // Grading numerically.
+            foreach ($grades as $grade) {
+                $gradesums[$grade->studentid]->sum = @$gradesums[$grade->studentid]->sum + $grade->grade;
+                $gradesums[$grade->studentid]->count = @$gradesums[$grade->studentid]->count + 1;
+                $gradesums[$grade->studentid]->max = (@$gradesums[$grade->studentid]->max < $grade->grade) ? $grade->grade : @$gradesums[$grade->studentid]->max;
+            }
+
+            // Retrieve the adequate strategy.
+            foreach ($gradesums as $student => $gradeset) {
+                switch ($this->gradingstrategy) {
+                    case SCHEDULER_MAX_GRADE:
+                        $finalgrades[$student]->rawgrade = $gradeset->max;
+                        break;
+                    case SCHEDULER_MEAN_GRADE:
+                        $finalgrades[$student]->rawgrade = $gradeset->sum / $gradeset->count;
+                        break;
+                }
+            }
+
+        } else { // Grading on scales.
+            $scaleid = - ($this->scale);
+            $maxgrade = '';
+            if ($scale = $DB->get_record('scale', array('id' => $scaleid))) {
+                $scalegrades = make_menu_from_list($scale->scale);
+                foreach ($grades as $grade) {
+                    $gradesums[$grade->studentid]->sum = @$gradesums[$grade->studentid]->sum + $grade->grade;
+                    $gradesums[$grade->studentid]->count = @$gradesums[$grade->studentid]->count + 1;
+                    $gradesums[$grade->studentid]->max = (@$gradesums[$grade->studentid]->max < $grade) ? $grade->grade : @$gradesums[$grade->studentid]->max;
+                }
+                $maxgrade = $scale->name;
+            }
+
+            // Retrieve the adequate strategy.
+            foreach ($gradesums as $student => $gradeset) {
+                switch ($this->gradingstrategy) {
+                    case SCHEDULER_MAX_GRADE:
+                        $finalgrades[$student]->rawgrade = $gradeset->max;
+                        break;
+                    case SCHEDULER_MEAN_GRADE:
+                        $finalgrades[$student]->rawgrade = $gradeset->sum / $gradeset->count;
+                        break;
+                }
+            }
+
+        }
+        // Include any empty grades.
+        if ($userid > 0) {
+            if (!array_key_exists($userid, $finalgrades)) {
+                $finalgrades[$userid] = new stdClass();
+                $finalgrades[$userid]->userid = $userid;
+                $finalgrades[$userid]->rawgrade = null;
+            }
+        } else {
+            $gui = new graded_users_iterator($this->get_courserec());
+            $gui->init();
+            while ($userdata = $gui->next_user()) {
+                $uid = $userdata->user->id;
+                if (!array_key_exists($uid, $finalgrades)) {
+                    $finalgrades[$uid] = new stdClass();
+                    $finalgrades[$uid]->userid = $uid;
+                    $finalgrades[$uid]->rawgrade = null;
                 }
             }
         }
-        return $this->scalecache;
+        return $finalgrades;
+
     }
+
+    /**
+     * Get gradebook information for a particular student.
+     * The return value is a grade_grade object.
+     *
+     * @param int $studentid id number of the student
+     * @return stdClass the gradebook information. May be null if no info is found.
+     */
+    public function get_gradebook_info($studentid) {
+
+        $gradinginfo = grade_get_grades($this->courseid, 'mod', 'scheduler', $this->id, $studentid);
+        if (!empty($gradinginfo->items)) {
+            $item = $gradinginfo->items[0];
+            if (isset($item->grades[$studentid])) {
+                return $item->grades[$studentid];
+            }
+        }
+        return null;
+    }
+
 
     /* *********************** Loading lists of slots *********************** */
 
@@ -258,7 +396,7 @@ class scheduler_instance extends mvc_record_model {
         return '(SELECT COUNT(a.id) FROM {scheduler_appointment} a WHERE a.slotid=s.id)';
     }
 
-	protected $studparno = 0;
+    protected $studparno = 0;
     protected function student_in_slot_condition(&$params, $studentid, $mustbeattended, $mustbeunattended) {
         $cond = 'EXISTS (SELECT 1 FROM {scheduler_appointment} a WHERE a.studentid = :studentid'.$this->studparno.' and a.slotid=s.id';
         if ($mustbeattended) {
@@ -292,13 +430,13 @@ class scheduler_instance extends mvc_record_model {
     }
 
     public function get_all_slots($limitfrom='', $limitnum='') {
-        return $this->fetch_slots('', '', array(), $limitfrom, $limitnum);
+        return $this->fetch_slots('', '', array(), $limitfrom, $limitnum, 's.starttime ASC');
     }
 
     public function get_slots_for_teacher($teacherid) {
         $wherecond = 'teacherid = :teacherid';
         $paras = array('teacherid' => $teacherid);
-        return $this->fetch_slots($wherecond, '', $paras, '', '');
+        return $this->fetch_slots($wherecond, '', $paras, '', '', 's.starttime ASC');
     }
 
     /**
@@ -352,7 +490,7 @@ class scheduler_instance extends mvc_record_model {
         $params['nowhide'] = time();
         $params['cutofftime'] = time() + $this->guardtime;
         $subcond = '(s.exclusivity = 0 OR s.exclusivity > '.$this->appointment_count_query().')'
-             . ' AND NOT ('.$this->student_in_slot_condition($params, $studentid, false, false).')';
+            . ' AND NOT ('.$this->student_in_slot_condition($params, $studentid, false, false).')';
         if ($includebooked) {
             $subcond = '('.$subcond.') OR ('.$this->student_in_slot_condition($params, $studentid, false, true).')';
         }
@@ -373,6 +511,8 @@ class scheduler_instance extends mvc_record_model {
     }
 
     /* ************** End of slot retrieveal routines ******************** */
+
+
 
     /**
      * retrieves an appointment and the corresponding slot
@@ -410,8 +550,8 @@ class scheduler_instance extends mvc_record_model {
 
         // find how many slots have already been booked
         $sql = 'SELECT COUNT(*) FROM {scheduler_slots} s'
-                 .' JOIN {scheduler_appointment} a ON s.id = a.slotid'
-                 .' WHERE s.schedulerid = :schedulerid AND a.studentid=:studentid';
+              .' JOIN {scheduler_appointment} a ON s.id = a.slotid'
+              .' WHERE s.schedulerid = :schedulerid AND a.studentid=:studentid';
         if ($this->schedulermode == 'onetime') {
             if ($includechangeable) {
                 $sql .= ' AND s.starttime <= :cutofftime';
@@ -435,6 +575,18 @@ class scheduler_instance extends mvc_record_model {
 
     }
 
+    /**
+     * get list of teachers that have slots in the scheduler
+     */
+    public function get_teachers() {
+        global $DB;
+        $sql =   'SELECT DISTINCT u.* '
+                .' FROM {scheduler_slots} s, {user} u'
+                .' WHERE s.teacherid = u.id AND schedulerid = ?';
+        $teachers = $DB->get_records_sql($sql, array($this->id));
+        return $teachers;
+    }
+
 
     /**
      * get list of possible attendees (i.e., users that can make an appointment)
@@ -445,7 +597,7 @@ class scheduler_instance extends mvc_record_model {
     public function get_possible_attendees($groups = '') {
         // TODO does this need to go to the controller?
         $attendees = get_users_by_capability($this->get_context(), 'mod/scheduler:appoint', '',
-                        'lastname, firstname', '', '', $groups, '', false, false, false);
+            'lastname, firstname', '', '', $groups, '', false, false, false);
 
         return $attendees;
     }
@@ -510,8 +662,8 @@ class scheduler_instance extends mvc_record_model {
 
         $now = time();
         $sql =  'SELECT DISTINCT s.id FROM {scheduler_slots} s '
-                        .'LEFT JOIN {scheduler_appointment} a ON s.id = a.slotid '
-                                        .'WHERE a.studentid IS NULL AND s.schedulerid = ? AND starttime < ?';
+               .'LEFT JOIN {scheduler_appointment} a ON s.id = a.slotid '
+               .'WHERE a.studentid IS NULL AND s.schedulerid = ? AND starttime < ?';
         $todelete = $DB->get_records_sql($sql, array($this->id, $now));
         if ($todelete) {
             list($usql, $params) = $DB->get_in_or_equal(array_keys($todelete));

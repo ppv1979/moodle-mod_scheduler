@@ -14,6 +14,8 @@ defined('MOODLE_INTERNAL') || die();
 function scheduler_prepare_formdata(scheduler_slot $slot) {
 
     $data = $slot->get_data();
+    $data->exclusivityenable = ($data->exclusivity > 0);
+
     $data->notes = array();
     $data->notes['text'] = $slot->notes;
     $data->notes['format'] = $slot->notesformat;
@@ -46,7 +48,7 @@ function scheduler_save_slotform(scheduler_instance $scheduler, $course, $slotid
     // Set data fields from input form.
     $slot->starttime = $data->starttime;
     $slot->duration = $data->duration;
-    $slot->exclusivity = $data->exclusivity;
+    $slot->exclusivity = $data->exclusivityenable? $data->exclusivity : 0;
     $slot->teacherid = $data->teacherid;
     $slot->notes = $data->notes['text'];
     $slot->notesformat = $data->notes['format'];
@@ -145,6 +147,8 @@ if ($action != 'view') {
     include($CFG->dirroot.'/mod/scheduler/teacherview.controller.php');
 }
 
+
+echo $output->header();
 
 /************************************ View : New single slot form ****************************************/
 if ($action == 'addslot') {
@@ -472,7 +476,7 @@ if ($slots) {
 }
 
 
-$students = $scheduler->get_students_for_scheduling($usergroups, $CFG->scheduler_maxstudentlistsize);
+$students = $scheduler->get_students_for_scheduling($usergroups, get_config('mod_scheduler', 'maxstudentlistsize'));
 if ($students === 0) {
     $nostudentstr = get_string('noexistingstudents', 'scheduler');
     if ($COURSE->id == SITEID) {
@@ -506,7 +510,7 @@ if ($students === 0) {
     $reminderurl = new moodle_url($mailto, array('subject' => $subject, 'body' => $body));
 
     $maildisplay = '';
-    if ($CFG->scheduler_showemailplain) {
+    if (get_config('mod_scheduler', 'showemailplain')) {
         $maildisplay .= html_writer::div(implode(', ', $maillist));
     }
     $maildisplay .= get_string('composeemail', 'scheduler').' ';
@@ -609,3 +613,4 @@ if ($students === 0) {
 } else {
     echo $output->notification(get_string('nostudents', 'scheduler'));
 }
+echo $output->footer($course);
