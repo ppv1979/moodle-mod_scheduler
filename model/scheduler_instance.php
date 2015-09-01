@@ -179,7 +179,7 @@ class scheduler_instance extends mvc_record_model {
     public function is_group_scheduling_enabled() {
         global $CFG;
         $globalenable = (bool) get_config('mod_scheduler', 'groupscheduling');
-        $localenable = $this->groupmode > 0;
+        $localenable = $this->bookingrouping >= 0;
         return $globalenable && $localenable;
     }
 
@@ -389,6 +389,25 @@ class scheduler_instance extends mvc_record_model {
     }
 
     /**
+     * Count a list of slots in the database
+     */
+    protected function count_slots($wherecond, array $params) {
+        global $DB;
+        $select = 'SELECT COUNT(*) FROM {scheduler_slots} s';
+
+        $where = 'WHERE schedulerid = :schedulerid';
+        if ($wherecond) {
+            $where .= ' AND ('.$wherecond.')';
+        }
+        $params['schedulerid'] = $this->data->id;
+
+        $sql = "$select $where";
+
+        return $DB->count_records_sql($sql, $params);
+    }
+
+
+    /**
      * Subquery that counts appointments in the current slot.
      * Only to be used in conjunction with fetch_slots()
      */
@@ -433,12 +452,6 @@ class scheduler_instance extends mvc_record_model {
         return $this->fetch_slots('', '', array(), $limitfrom, $limitnum, 's.starttime ASC');
     }
 
-    public function get_slots_for_teacher($teacherid) {
-        $wherecond = 'teacherid = :teacherid';
-        $paras = array('teacherid' => $teacherid);
-        return $this->fetch_slots($wherecond, '', $paras, '', '', 's.starttime ASC');
-    }
-
     /**
      * Retrieves attended of a student. These will be sorted by start time.
      *
@@ -456,18 +469,14 @@ class scheduler_instance extends mvc_record_model {
 
     /**
      * Retrieves upcoming slots booked by a student. These will be sorted by start time.
-     * A slot is "upcoming" if it is not attended, but can no longer be rebooked;
-     * because it is closer than the "guard time" to the current time.
+     * A slot is "upcoming" if it as been booked but is not attended.
      *
      * @param int $studentid
      */
     public function get_upcoming_slots_for_student($studentid) {
 
         $params = array();
-        $wherecond = '(s.starttime <= :guard)';
-        $params['guard'] = time() + $this->guardtime;
-        $wherecond .= ' AND '.$this->student_in_slot_condition($params, $studentid, false, true);
-
+        $wherecond = $this->student_in_slot_condition($params, $studentid, false, true);
         $slots = $this->fetch_slots($wherecond, '', $params, '', '', 's.starttime');
 
         return $slots;
@@ -479,10 +488,11 @@ class scheduler_instance extends mvc_record_model {
      *
      * @param int $studentid
      * @param boolean $includebooked include slots that were booked by this student (but not yet attended)
+     * @param array $groupids restrict choice to these groups. This takes effect only if the scheduler is in VISIBLEGROUPS or SEPARATEGROUPS mode.
      * @uses $CFG
      * @uses $DB
      */
-    public function get_slots_available_to_student($studentid, $includebooked = false) {
+    public function get_slots_available_to_student($studentid, $includebooked = false, $groupids = null) {
         global $CFG, $DB;
 
         $params = array();
@@ -491,6 +501,19 @@ class scheduler_instance extends mvc_record_model {
         $params['cutofftime'] = time() + $this->guardtime;
         $subcond = '(s.exclusivity = 0 OR s.exclusivity > '.$this->appointment_count_query().')'
             . ' AND NOT ('.$this->student_in_slot_condition($params, $studentid, false, false).')';
+        if ($this->cm->groupmode != NOGROUPS) {
+            if (!$groupids) {
+                $groups = groups_get_activity_allowed_groups($this->cm, $studentid);
+                $groupids = array();
+                foreach ($groups as $group) {
+                    $groupids[] = $group->id;
+                }
+            }
+            list($sqlin, $paramsin) = $DB->get_in_or_equal($groupids, SQL_PARAMS_NAMED);
+            $subquery = "SELECT 1 FROM {groups_members} gm WHERE gm.userid = s.teacherid AND gm.groupid $sqlin";
+            $subcond .= " AND EXISTS ($subquery)";
+            $params = array_merge($params, $paramsin);
+        }
         if ($includebooked) {
             $subcond = '('.$subcond.') OR ('.$this->student_in_slot_condition($params, $studentid, false, true).')';
         }
@@ -501,6 +524,13 @@ class scheduler_instance extends mvc_record_model {
         return $slots;
     }
 
+    public function has_slots_for_student($studentid, $mustbeattended, $mustbeunattended) {
+        $params = array();
+        $where = $this->student_in_slot_condition($params, $studentid, $mustbeattended, $mustbeunattended);
+        $cnt = $this->count_slots($where, $params);
+        return $cnt > 0;
+    }
+
     /**
      * retrieves slots without any appointment made
      */
@@ -508,6 +538,34 @@ class scheduler_instance extends mvc_record_model {
         $wherecond = $this->appointment_count_query().' = 0';
         $slots = $this->fetch_slots($wherecond, '', array());
         return $slots;
+    }
+
+    protected function slots_for_teacher_cond($teacherid, $groupid, $inpast) {
+        $wheres = array();
+        $params = array();
+        if ($teacherid > 0) {
+            $wheres[] = "teacherid = :tid";
+            $params['tid'] = $teacherid;
+        }
+        if ($groupid > 0) {
+            $wheres[] = "EXISTS (SELECT 1 FROM {groups_members} gm WHERE gm.groupid = :gid AND gm.userid = s.teacherid)";
+            $params['gid'] = $groupid;
+        }
+        if ($inpast) {
+            $wheres[] = "s.starttime < ".strtotime('now');
+        }
+        $where = implode(" AND ", $wheres);
+        return array($where, $params);
+    }
+
+    public function count_slots_for_teacher($teacherid, $groupid = 0, $inpast = false) {
+        list($where, $params) = $this->slots_for_teacher_cond($teacherid, $groupid, $inpast);
+        return $this->count_slots($where, $params);
+    }
+
+    public function get_slots_for_teacher($teacherid, $groupid = 0, $limitfrom = '', $limitnum = '') {
+        list($where, $params) = $this->slots_for_teacher_cond($teacherid, $groupid, false);
+        return $this->fetch_slots($where, '', $params, $limitfrom, $limitnum, 's.starttime ASC');
     }
 
     /* ************** End of slot retrieveal routines ******************** */
@@ -599,11 +657,15 @@ class scheduler_instance extends mvc_record_model {
         $attendees = get_users_by_capability($this->get_context(), 'mod/scheduler:appoint', '',
             'lastname, firstname', '', '', $groups, '', false, false, false);
 
+        $modinfo = get_fast_modinfo($this->courseid);
+        $info = new \core_availability\info_module($modinfo->get_cm($this->cmid));
+        $attendees = $info->filter_user_list($attendees);
+
         return $attendees;
     }
 
     /**
-     * Get a list of students that can still mae an appointment
+     * Get a list of students that can still make an appointment
      *
      * @param $groups - single group or array of groups - only return
      *                  users who are in one of these group(s).
