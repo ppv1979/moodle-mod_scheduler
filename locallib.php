@@ -19,25 +19,6 @@ require_once(dirname(__FILE__).'/model/scheduler_appointment.php');
 
 
 /**
- * get list of attendants for slot form
- * @param int $cmid the course module
- * @param mixed $groupid id number of the group to select from, 0 or '' if all groups
- * @return array of moodle user records
- */
-function scheduler_get_attendants($cmid, $groupid='') {
-    $context = context_module::instance($cmid);
-    if (!$groupid) {
-        $groupkeys = '';
-    } else {
-        $groupkeys = array($groupid);
-    }
-    $attendants = get_users_by_capability ($context, 'mod/scheduler:attend',
-        user_picture::fields('u'), 'u.lastname, u.firstname',
-        '', '', $groupkeys, '', false, false, false);
-    return $attendants;
-}
-
-/**
  * Returns an array of slots that would overlap with this one.
  * @param int $schedulerid the current activity module id
  * @param int $starttimethe start of time slot as a timestamp
@@ -168,55 +149,7 @@ function scheduler_delete_calendar_events($slot) {
 }
 
 
-/**
- * Construct an array with subtitution rules for mail templates, relating to
- * a single appointment. Any of the parameters can be null.
- * @param scheduler_instance $scheduler The scheduler instance
- * @param scheduler_slot $slot The slot data as an MVC object
- * @param user $attendant A {@link $USER} object describing the attendant (teacher)
- * @param user $attendee A {@link $USER} object describing the attendee (student)
- * @param object $course A course object relating to the ontext of the message
- * @param object $recipient A {@link $USER} object describing the recipient of the message (used for determining the message language)
- * @return array A hash with mail template substitutions
- */
-function scheduler_get_mail_variables (scheduler_instance $scheduler, scheduler_slot $slot, $attendant, $attendee, $course, $recipient) {
 
-    global $CFG;
-
-    $lang = scheduler_get_message_language($recipient, $course);
-    // Force any string formatting to happen in the target language.
-    $oldlang = force_current_language($lang);
-
-    $tz = core_date::get_user_timezone($recipient);
-
-    $vars = array();
-
-    if ($scheduler) {
-        $vars['MODULE']     = $scheduler->name;
-        $vars['STAFFROLE']  = $scheduler->get_teacher_name();
-        $vars['SCHEDULER_URL'] = $CFG->wwwroot.'/mod/scheduler/view.php?id='.$scheduler->cmid;
-    }
-    if ($slot) {
-        $vars ['DATE']     = userdate($slot->starttime, get_string('strftimedate'), $tz);
-        $vars ['TIME']     = userdate($slot->starttime, get_string('strftimetime'), $tz);
-        $vars ['ENDTIME']  = userdate($slot->endtime, get_string('strftimetime'), $tz);
-        $vars ['LOCATION'] = format_string($slot->appointmentlocation);
-    }
-    if ($attendant) {
-        $vars['ATTENDANT']     = fullname($attendant);
-        $vars['ATTENDANT_URL'] = $CFG->wwwroot.'/user/view.php?id='.$attendant->id.'&course='.$scheduler->course;
-    }
-    if ($attendee) {
-        $vars['ATTENDEE']     = fullname($attendee);
-        $vars['ATTENDEE_URL'] = $CFG->wwwroot.'/user/view.php?id='.$attendee->id.'&course='.$scheduler->course;
-    }
-
-    // Reset language settings.
-    force_current_language($oldlang);
-
-    return $vars;
-
-}
 
 /**
  * Prints a summary of a user in a nice little box.
@@ -329,11 +262,4 @@ function scheduler_print_user($user, $course, $messageselect=false, $return=fals
         echo $output;
     }
 }
-
-
-function scheduler_has_teachers($context) {
-    $teachers = get_users_by_capability ($context, 'mod/scheduler:attend', 'u.id');
-    return count($teachers) > 0;
-}
-
 
