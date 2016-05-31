@@ -3,8 +3,7 @@
 /**
  * General library for the scheduler module.
  *
- * @package    mod
- * @subpackage scheduler
+ * @package    mod_scheduler
  * @copyright  2011 Henning Bostelmann and others (see README.txt)
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -25,77 +24,39 @@ require_once(dirname(__FILE__).'/model/scheduler_appointment.php');
  * @param int $endtime end of time slot as a timestamp
  * @param int $teacher if not null, the id of the teacher constraint, 0 otherwise standas for "all teachers"
  * @param int $others selects where to search for conflicts, [SCHEDULER_SELF, SCHEDULER_OTHERS, SCHEDULER_ALL]
- * @param boolean $careexclusive if false, conflict will consider all slots wether exlusive or not. Use it for testing if user is appointed in the given scope.
+ * @param boolean $careexclusive if false, conflict will consider all slots wether exlusive or not. 
+ *              Use it for testing if user is appointed in the given scope.
  * @uses $CFG
  * @uses $DB
  * @return array array of conflicting slots
  */
-function scheduler_get_conflicts($schedulerid, $starttime, $endtime, $teacher=0, $student=0, $others=SCHEDULER_SELF, $careexclusive=true) {
+function scheduler_get_conflicts($schedulerid, $starttime, $endtime, $teacher=0, $student=0,
+                                 $others = SCHEDULER_SELF, $careexclusive = true) {
     global $CFG, $DB;
 
     switch ($others){
         case SCHEDULER_SELF:
-            $schedulerScope = "s.schedulerid = {$schedulerid} AND ";
+            $schedulerscope = "s.schedulerid = {$schedulerid} AND ";
             break;
         case SCHEDULER_OTHERS:
-            $schedulerScope = "s.schedulerid != {$schedulerid} AND ";
+            $schedulerscope = "s.schedulerid != {$schedulerid} AND ";
             break;
         default:
-            $schedulerScope = '';
+            $schedulerscope = '';
     }
-    $teacherScope = ($teacher != 0) ? "s.teacherid = {$teacher} AND " : '' ;
-    $studentJoin = ($student != 0) ? "JOIN {scheduler_appointment} a ON a.slotid = s.id AND a.studentid = {$student} " : '' ;
-    $exclusiveClause = ($careexclusive) ? "exclusivity != 0 AND " : '' ;
-    $timeClause = "( (s.starttime <= {$starttime} AND s.starttime + s.duration * 60 > {$starttime}) OR ".
+    $teachescope = ($teacher != 0) ? "s.teacherid = {$teacher} AND " : '';
+    $studentjoin = ($student != 0) ? "JOIN {scheduler_appointment} a ON a.slotid = s.id AND a.studentid = {$student} " : '';
+    $exclusiveclause = ($careexclusive) ? "exclusivity != 0 AND " : '';
+    $timeclause = "( (s.starttime <= {$starttime} AND s.starttime + s.duration * 60 > {$starttime}) OR ".
         "  (s.starttime < {$endtime} AND s.starttime + s.duration * 60 >= {$endtime}) OR ".
         "  (s.starttime >= {$starttime} AND s.starttime + s.duration * 60 <= {$endtime}) ) ";
 
-    $sql = 'SELECT s.* from {scheduler_slots} s '.$studentJoin.' WHERE '.
-        $schedulerScope.$teacherScope.$exclusiveClause.$timeClause;
+    $sql = 'SELECT s.* from {scheduler_slots} s '.$studentjoin.' WHERE '.
+        $schedulerscope.$teachescope.$exclusiveclause.$timeclause;
 
     $conflicting = $DB->get_records_sql($sql);
 
     return $conflicting;
-}
-
-
-/**
- * checks if user has an appointment in this scheduler
- * @param object $userlist
- * @param object $scheduler
- * @param boolean $student, if true, is a student, a teacher otherwise
- * @param boolean $unattended, if true, only checks for unattended slots
- * @param string $otherthan giving a slotid, excludes this slot from the search
- * @uses $CFG
- * @uses $DB
- * @return the count of records
- */
-function scheduler_has_slot($userlist, &$scheduler, $student=true, $unattended = false, $otherthan = 0){
-    global $CFG, $DB;
-
-    $userlist = str_replace(',', "','", $userlist);
-
-    $unattendedClause = ($unattended) ? ' AND a.attended = 0 ' : '' ;
-    $otherthanClause = ($otherthan) ? " AND a.slotid != $otherthan " : '' ;
-
-    if ($student){
-        $sql = "
-            SELECT
-            COUNT(*)
-            FROM
-            {scheduler_slots} s,
-            {scheduler_appointment} a
-            WHERE
-            a.slotid = s.id AND
-            s.schedulerid = ? AND
-            a.studentid IN ('{$userlist}')
-            $unattendedClause
-            $otherthanClause
-            ";
-        return $DB->count_records_sql($sql, array($scheduler->id));
-    } else {
-        return $DB->count_records('scheduler_slots', array('teacherid' => $userlist, 'schedulerid' => $scheduler->id));
-    }
 }
 
 /**
@@ -105,7 +66,7 @@ function scheduler_has_slot($userlist, &$scheduler, $student=true, $unattended =
  * @uses $DB
  * @return an array of users
  */
-function scheduler_get_appointed($slotid){
+function scheduler_get_appointed($slotid) {
     global $CFG, $DB;
 
     $sql = "
@@ -122,7 +83,7 @@ function scheduler_get_appointed($slotid){
 }
 
 
-/// Events related functions
+/* Events related functions */
 
 /**
  * Will delete calendar events for a given scheduler slot, and not complain if the record does not exist.
@@ -136,16 +97,18 @@ function scheduler_delete_calendar_events($slot) {
 
     $scheduler = $DB->get_record('scheduler', array('id' => $slot->schedulerid));
 
-    if (!$scheduler) return false ;
+    if (!$scheduler) {
+        return false;
+    }
 
-    $teacherEventType = "SSsup:{$slot->id}:{$scheduler->course}";
-    $studentEventType = "SSstu:{$slot->id}:{$scheduler->course}";
+    $teachereventtype = "SSsup:{$slot->id}:{$scheduler->course}";
+    $studenteventtype = "SSstu:{$slot->id}:{$scheduler->course}";
 
-    $teacherDeletionSuccess = $DB->delete_records('event', array('eventtype'=>$teacherEventType));
-    $studentDeletionSuccess = $DB->delete_records('event', array('eventtype'=>$studentEventType));
+    $teacherdeletionsuccess = $DB->delete_records('event', array('eventtype' => $teachereventtype));
+    $studentdeletionsuccess = $DB->delete_records('event', array('eventtype' => $studenteventtype));
 
-    return ($teacherDeletionSuccess && $studentDeletionSuccess);
-    //this return may not be meaningful if the delete records functions do not return anything meaningful.
+    return ($teacherdeletionsuccess && $studentdeletionsuccess);
+    // This return may not be meaningful if the delete records functions do not return anything meaningful.
 }
 
 
@@ -176,7 +139,7 @@ function scheduler_print_user($user, $course, $messageselect=false, $return=fals
         $usercontext = context_user::instance($user->id);
     }
 
-    if (empty($string)) {     // Cache all the strings for the rest of the page
+    if (empty($string)) {     // Cache all the strings for the rest of the page.
 
         $string = new stdClass();
         $string->email       = get_string('email');
@@ -202,7 +165,7 @@ function scheduler_print_user($user, $course, $messageselect=false, $return=fals
 
     }
 
-    /// Get the hidden field list
+    // Get the hidden field list.
     if (has_capability('moodle/course:viewhiddenuserfields', $context)) {
         $hiddenfields = array();
     } else {
@@ -212,7 +175,7 @@ function scheduler_print_user($user, $course, $messageselect=false, $return=fals
     $output .= '<table class="userinfobox">';
     $output .= '<tr>';
     $output .= '<td class="left side">';
-    $output .= $OUTPUT->user_picture($user, array('size'=>100));
+    $output .= $OUTPUT->user_picture($user, array('size' => 100));
     $output .= '</td>';
     $output .= '<td class="content">';
     $output .= '<div class="username">'.fullname($user, has_capability('moodle/site:viewfullnames', $context)).'</div>';
@@ -226,7 +189,6 @@ function scheduler_print_user($user, $course, $messageselect=false, $return=fals
         $output .= $field->title . ': ' . $field->value . '<br />';
     }
 
-
     if (!isset($hiddenfields['lastaccess'])) {
         if ($user->lastaccess) {
             $output .= $string->lastaccess .': '. userdate($user->lastaccess);
@@ -236,17 +198,21 @@ function scheduler_print_user($user, $course, $messageselect=false, $return=fals
         }
     }
     $output .= '</div></td><td class="links">';
-    //link to blogs
+    // Link to blogs.
     if ($CFG->bloglevel > 0) {
-        $output .= '<a href="'.$CFG->wwwroot.'/blog/index.php?userid='.$user->id.'">'.get_string('blogs','blog').'</a><br />';
+        $output .= '<a href="'.$CFG->wwwroot.'/blog/index.php?userid='.$user->id.'">'.get_string('blogs', 'blog').'</a><br />';
     }
-    //link to notes
-    if (!empty($CFG->enablenotes) and (has_capability('moodle/notes:manage', $context) || has_capability('moodle/notes:view', $context))) {
-        $output .= '<a href="'.$CFG->wwwroot.'/notes/index.php?course=' . $course->id. '&amp;user='.$user->id.'">'.get_string('notes','notes').'</a><br />';
+    // Link to notes.
+    if (!empty($CFG->enablenotes) and (has_capability('moodle/notes:manage', $context)
+            || has_capability('moodle/notes:view', $context))) {
+        $output .= '<a href="'.$CFG->wwwroot.'/notes/index.php?course=' . $course->id. '&amp;user='.$user->id.'">'.
+                    get_string('notes', 'notes').'</a><br />';
     }
 
-    if (has_capability('moodle/site:viewreports', $context) or has_capability('moodle/user:viewuseractivitiesreport', $usercontext)) {
-        $output .= '<a href="'. $CFG->wwwroot .'/course/user.php?id='. $course->id .'&amp;user='. $user->id .'">'. $string->activity .'</a><br />';
+    if (has_capability('moodle/site:viewreports', $context) or
+            has_capability('moodle/user:viewuseractivitiesreport', $usercontext)) {
+        $output .= '<a href="'. $CFG->wwwroot .'/course/user.php?id='. $course->id .'&amp;user='. $user->id .'">'.
+                    $string->activity .'</a><br />';
     }
     $output .= '<a href="'. $CFG->wwwroot .'/user/profile.php?id='. $user->id .'">'. $string->fullprofile .'...</a>';
 
@@ -263,3 +229,163 @@ function scheduler_print_user($user, $course, $messageselect=false, $return=fals
     }
 }
 
+
+/**
+ * File browsing support class
+ */
+class scheduler_file_info extends file_info {
+    /** @var stdClass Course object */
+    protected $course;
+    /** @var stdClass Course module object */
+    protected $cm;
+    /** @var array Available file areas */
+    protected $areas;
+    /** @var string File area to browse */
+    protected $filearea;
+    /** @var scheduler_instance The scheduler that this file area refers to */
+    protected $scheduler;
+
+    /**
+     * Constructor
+     *
+     * @param file_browser $browser file_browser instance
+     * @param stdClass $course course object
+     * @param stdClass $cm course module object
+     * @param stdClass $context module context
+     * @param array $areas available file areas
+     * @param string $filearea file area to browse
+     */
+    public function __construct($browser, $course, $cm, $context, $areas, $filearea) {
+        parent::__construct($browser, $context);
+        $this->course   = $course;
+        $this->cm       = $cm;
+        $this->areas    = $areas;
+        $this->filearea = $filearea;
+        $this->scheduler = scheduler_instance::load_by_coursemodule_id($cm->id);
+    }
+
+    /**
+     * Returns list of standard virtual file/directory identification.
+     * The difference from stored_file parameters is that null values
+     * are allowed in all fields
+     * @return array with keys contextid, filearea, itemid, filepath and filename
+     */
+    public function get_params() {
+        return array('contextid' => $this->context->id,
+                     'component' => 'mod_scheduler',
+                     'filearea'  => $this->filearea,
+                     'itemid'    => null,
+                     'filepath'  => null,
+                     'filename'  => null);
+    }
+
+    /**
+     * Returns localised visible name.
+     * @return string
+     */
+    public function get_visible_name() {
+        return $this->areas[$this->filearea];
+    }
+
+    /**
+     * Can I add new files or directories?
+     * @return bool
+     */
+    public function is_writable() {
+        return false;
+    }
+
+    /**
+     * Is directory?
+     * @return bool
+     */
+    public function is_directory() {
+        return true;
+    }
+
+    /**
+     * Returns list of children.
+     * @return array of file_info instances
+     */
+    public function get_children() {
+        return $this->get_filtered_children('*', false, true);
+    }
+
+    /**
+     * Help function to return files matching extensions or their count
+     *
+     * @param string|array $extensions, either '*' or array of lowercase extensions, i.e. array('.gif','.jpg')
+     * @param bool|int $countonly if false returns the children, if an int returns just the
+     *    count of children but stops counting when $countonly number of children is reached
+     * @param bool $returnemptyfolders if true returns items that don't have matching files inside
+     * @return array|int array of file_info instances or the count
+     */
+    private function get_filtered_children($extensions = '*', $countonly = false, $returnemptyfolders = false) {
+        global $DB;
+
+        $params = array('contextid' => $this->context->id,
+                        'component' => 'mod_scheduler',
+                        'filearea' => $this->filearea);
+        $sql = "SELECT DISTINCT f.itemid AS id
+                           FROM {files} f
+                          WHERE f.contextid = :contextid
+                                AND f.component = :component
+                                AND f.filearea = :filearea";
+        if (!$returnemptyfolders) {
+            $sql .= ' AND filename <> :emptyfilename';
+            $params['emptyfilename'] = '.';
+        }
+        list($sql2, $params2) = $this->build_search_files_sql($extensions, 'f');
+        $sql .= ' '.$sql2;
+        $params = array_merge($params, $params2);
+
+        $rs = $DB->get_recordset_sql($sql, $params);
+        $children = array();
+        foreach ($rs as $record) {
+            if ($child = $this->browser->get_file_info($this->context, 'mod_scheduler', $this->filearea, $record->id)) {
+                if ($returnemptyfolders || $child->count_non_empty_children($extensions)) {
+                    $children[] = $child;
+                }
+            }
+            if ($countonly !== false && count($children) >= $countonly) {
+                break;
+            }
+        }
+        $rs->close();
+        if ($countonly !== false) {
+            return count($children);
+        }
+        return $children;
+    }
+
+    /**
+     * Returns list of children which are either files matching the specified extensions
+     * or folders that contain at least one such file.
+     *
+     * @param string|array $extensions, either '*' or array of lowercase extensions, i.e. array('.gif','.jpg')
+     * @return array of file_info instances
+     */
+    public function get_non_empty_children($extensions = '*') {
+        return $this->get_filtered_children($extensions, false);
+    }
+
+    /**
+     * Returns the number of children which are either files matching the specified extensions
+     * or folders containing at least one such file.
+     *
+     * @param string|array $extensions, for example '*' or array('.gif','.jpg')
+     * @param int $limit stop counting after at least $limit non-empty children are found
+     * @return int
+     */
+    public function count_non_empty_children($extensions = '*', $limit = 1) {
+        return $this->get_filtered_children($extensions, $limit);
+    }
+
+    /**
+     * Returns parent file_info instance
+     * @return file_info or null for root
+     */
+    public function get_parent() {
+        return $this->browser->get_file_info($this->context);
+    }
+}

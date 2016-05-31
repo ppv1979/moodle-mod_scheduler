@@ -42,6 +42,9 @@ $string['messageprovider:reminder'] = 'Reminder of an upcoming appointment';
 
 $string['onedaybefore'] = '1 day before slot';
 $string['oneweekbefore'] = '1 week before slot';
+$string['areaappointmentnote'] = 'Files in appointment notes';
+$string['areaslotnote'] = 'Files in slot notes';
+$string['areateachernote'] = 'Files in confidential notes';
 $string['action'] = 'Action';
 $string['actions'] = 'Actions';
 $string['addappointment'] = 'Add another student';
@@ -64,7 +67,7 @@ $string['appointingstudent'] = 'Appointment for slot';
 $string['appointingstudentinnew'] = 'Appointment for new slot';
 $string['appointment'] = 'Appointment';
 $string['appointmentno'] = 'Appointment {$a}';
-$string['appointmentnotes'] = 'Notes for appointment';
+$string['appointmentnote'] = 'Notes for appointment (visible to student)';
 $string['appointments'] = 'Appointments';
 $string['appointmentsgrouped'] = 'Appointments grouped by slot';
 $string['appointsolo'] = 'just me';
@@ -175,7 +178,8 @@ $string['field-studentusername'] = 'Student user name';
 $string['field-studentidnumber'] = 'Student id number';
 $string['field-attended'] = 'Attended';
 $string['field-slotnotes'] = 'Slot notes';
-$string['field-appointmentnotes'] = 'Appointment notes';
+$string['field-appointmentnote'] = 'Appointment note (to student)';
+$string['field-teachernote'] = 'Confidential note (teacher only)';
 $string['field-grade'] = 'Grade';
 $string['fileformat'] = 'File format';
 $string['fileformat_help'] = 'The following file formats are available:
@@ -287,6 +291,8 @@ $string['oneslotdeleted'] = '1 slot deleted';
 $string['onthemorningofappointment'] = 'On the morning of the appointment';
 $string['options'] = 'Options';
 $string['otherstudents'] = 'Other participants';
+$string['outlineappointments'] = '{$a->attended} appointments attended, {$a->upcoming} upcoming. ';
+$string['outlinegrade'] = 'Grade: {$a}.';
 $string['overall'] = 'Overall';
 $string['overlappings'] = 'Some other slots are overlapping';
 $string['pageperteacher'] = 'One page for each {$a}';
@@ -298,6 +304,7 @@ $string['pdforientation'] = 'PDF page orientation';
 $string['portrait'] = 'Portrait';
 $string['preview'] = 'Preview';
 $string['previewlimited'] = '(Preview is limited to {$a} rows.)';
+$string['purgeunusedslots'] = 'Purge unused slots in the past';
 $string['recipients'] = 'Recipients';
 $string['registeredlbl'] = 'Student appointed';
 $string['reminder'] = 'Reminder';
@@ -325,6 +332,7 @@ $string['selectedtoomany'] = 'You have selected too many slots. You can select n
 $string['sendmessage'] = 'Send message';
 $string['sendinvitation'] = 'Send invitation';
 $string['sendreminder'] = 'Send reminder';
+$string['sendreminders'] = 'Send e-mail reminders for upcoming appointments';
 $string['sepcolon'] = 'Colon';
 $string['sepcomma'] = 'Comma';
 $string['sepsemicolon'] = 'Semicolon';
@@ -360,6 +368,7 @@ $string['tab-thisappointment'] = 'This appointment';
 $string['tab-otherappointments'] = 'All appointments of this student';
 $string['tab-otherstudents'] = 'Students in this slot';
 $string['teacher'] = 'Teacher';
+$string['teachernote'] = 'Confidential notes (visible to teacher only)';
 $string['teachersmenu'] = 'Show slots for: {$a}';
 $string['thisscheduler'] = 'this scheduler';
 $string['thiscourse'] = 'this course';
@@ -377,6 +386,11 @@ $string['upcomingslots'] = 'Upcoming slots';
 $string['updategrades'] = 'Update grades';
 $string['updatesingleslot'] = '';
 $string['updatingappointment'] = 'Updating an appointment';
+$string['usenotes'] = 'Use notes for appointments';
+$string['usenotesnone'] = 'none';
+$string['usenotesstudent'] = 'Appointment note, visible to teacher and student';
+$string['usenotesteacher'] = 'Confidential note, visible to teachers only';
+$string['usenotesboth'] = 'Both types of notes';
 $string['wednesday'] = 'Wednesday';
 $string['welcomebackstudent'] = 'You can book additional slots by clicking on the corresponding "Book slot" button below.';
 $string['welcomenewstudent'] = 'The table below shows all available slots for an appointment. Make your choice by clicking on the corresponding "Book slot" button. If you need to make a change later you can revisit this page.';
@@ -399,19 +413,19 @@ $string['yourtotalgrade'] = 'Your total grade in this activity is <strong>{$a}</
 
 /* ***********  Help strings from here on ************ */
 
-$string['forcewhenoverlap_help']='
+$string['forcewhenoverlap_help'] = '
 <h3>Forcing slot creation when slots overlap</h3>
 <p>This setting determines how new slots will be handled if they overlap with other, already existing slots.</p>
 <p>If enabled, the overlapping existing slot will be deleted and the new slot created.</p>
 <p>If disabled, the overlapping existing slot will be kept and a new slot will <em>not</em> be created.</p>
 ';
 
-$string['addscheduled_help']='
+$string['addscheduled_help'] = '
 <h3>Adding an appointment on slot setup</h3>
 <p>Using this link, you will add a user to the appointment list defined by this slot information. It may be a simple and fast way to setup a collective appointment. </p>';
 
 $string['appointmentmode'] = 'Setting the appointment mode';
-$string['appointmentmode_help']='<p>You may choose here some variants in the way appointments can be taken. </p>
+$string['appointmentmode_help'] = '<p>You may choose here some variants in the way appointments can be taken. </p>
 <p><ul>
 <li><b>"<i>n</i> appointments in this scheduler":</b> The student can only book a fixed number of appointments in this activity. Even if the teacher marks them as "seen", they will not be allowed to book further meetings. The only way to reset ability of a student to book is to delete the old "seen" records.</li>
 <li><strong>"<emph>n</emph> appointments at a time":</strong> The student can book a fixed number of appointments. Once the meeting is over and the teacher has marked the student as "seen", the student can book further appointments. However the student is limited to <emph>n</emph> "open" (unseen) slots at any given time.
@@ -421,22 +435,22 @@ $string['appointmentmode_help']='<p>You may choose here some variants in the way
 
 $string['appointagroup_help'] = 'Choose whether you want to make the appointment only for yourself, or for an entire group.';
 
-$string['bookwithteacher_help']='Choose a teacher for the appointment.';
+$string['bookwithteacher_help'] = 'Choose a teacher for the appointment.';
 
-$string['choosingslotstart_help']='Change (or choose) the appointment start time. If this appointment collides with some other slots, you\'ll be asked
+$string['choosingslotstart_help'] = 'Change (or choose) the appointment start time. If this appointment collides with some other slots, you\'ll be asked
 if this slot replaces all conflicting appointments. Note that the new slot parameters will override all previous
 settings.';
 
-$string['exclusivity_help']='<p>You can set a limit on the number of students that can apply for a given slot. </p>
+$string['exclusivity_help'] = '<p>You can set a limit on the number of students that can apply for a given slot. </p>
 <p>Setting a limit of 1 (default) will mean that the slot is exclusive to a single student.</p>
 <p>Setting a limit of, e.g., 3  will mean that up to three students can book into the slot.</p>
 <p>If disabled, any number of students can book the slot; it will never be considered "full".</p>';
 
-$string['location_help']='Specify the scheduled location of the meeting.';
+$string['location_help'] = 'Specify the scheduled location of the meeting.';
 
-$string['notifications_help']='When this option is enabled, teachers and students will receive notifications when appointments are applied for or cancelled.';
+$string['notifications_help'] = 'When this option is enabled, teachers and students will receive notifications when appointments are applied for or cancelled.';
 
-$string['staffrolename_help']='
+$string['staffrolename_help'] = '
 The label for the role who attends students. This is not necessarily a "teacher".';
 
 $string['guardtime_help'] = 'A guard time prevents students from changing their booking shortly before the appointment.

@@ -3,8 +3,7 @@
 /**
  * Student scheduler screen (where students choose appointments).
  *
- * @package    mod
- * @subpackage scheduler
+ * @package    mod_scheduler
  * @copyright  2011 Henning Bostelmann and others (see README.txt)
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -14,9 +13,6 @@ defined('MOODLE_INTERNAL') || die();
 $appointgroup = optional_param('appointgroup', 0, PARAM_INT);
 
 \mod_scheduler\event\booking_form_viewed::create_from_scheduler($scheduler)->trigger();
-
-// Clean all late slots (for everybody).
-$scheduler->free_late_unused_slots();
 
 $PAGE->set_docs_path('mod/scheduler/studentview');
 
@@ -40,7 +36,7 @@ if ($scheduler->is_group_scheduling_enabled()) {
     }
 }
 
-include_once($CFG->dirroot.'/mod/scheduler/studentview.controller.php');
+include($CFG->dirroot.'/mod/scheduler/studentview.controller.php');
 
 echo $output->header();
 
@@ -93,7 +89,8 @@ if (count($pastslots) > 0) {
         if ($pastslot->is_groupslot() && has_capability('mod/scheduler:seeotherstudentsresults', $context)) {
             $others = new scheduler_student_list($scheduler, true);
             foreach ($pastslot->get_appointments() as $otherapp) {
-                $gradehidden = ($scheduler->get_gradebook_info($otherapp->studentid)->hidden <> 0);
+                $othermark = $scheduler->get_gradebook_info($otherapp->studentid);
+                $gradehidden = !is_null($othermark) && ($othermark->hidden <> 0);
                 $others->add_student($otherapp, $otherapp->studentid == $USER->id, false, !$gradehidden);
             }
         } else {
