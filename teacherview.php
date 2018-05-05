@@ -10,6 +10,13 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+/**
+ * Print a selection box of existing slots to be scheduler in
+ *
+ * @param scheduler_instance $scheduler
+ * @param int $studentid student to schedule
+ * @param int $groupid group to schedule
+ */
 function scheduler_print_schedulebox(scheduler_instance $scheduler, $studentid, $groupid = 0) {
     global $output;
 
@@ -101,9 +108,17 @@ if ($groupmode) {
 
 
 $taburl = new moodle_url('/mod/scheduler/view.php', array('id' => $scheduler->cmid, 'what' => 'view', 'subpage' => $subpage));
-$PAGE->set_url($taburl);
 
-echo $output->header();
+$baseurl = new moodle_url('/mod/scheduler/view.php', array(
+        'id' => $scheduler->cmid,
+        'subpage' => $subpage,
+        'offset' => $offset
+));
+
+// The URL that is used for jumping back to the view (e.g., after an action is performed).
+$viewurl = new moodle_url($baseurl, array('what' => 'view'));
+
+$PAGE->set_url($viewurl);
 
 if ($action != 'view') {
     require_once($CFG->dirroot.'/mod/scheduler/slotforms.php');
@@ -112,22 +127,25 @@ if ($action != 'view') {
 
 /************************************ View : New single slot form ****************************************/
 if ($action == 'addslot') {
-    $actionurl = new moodle_url('/mod/scheduler/view.php', array('what' => 'addslot', 'subpage' => $subpage, 'id' => $cm->id));
-    $returnurl = new moodle_url('/mod/scheduler/view.php', array('what' => 'view', 'subpage' => $subpage, 'id' => $cm->id));
+    $actionurl = new moodle_url($baseurl, array('what' => 'addslot'));
 
     if (!$scheduler->has_available_teachers()) {
-        print_error('needteachers', 'scheduler', $returnurl);
+        print_error('needteachers', 'scheduler', viewurl);
     }
 
     $mform = new scheduler_editslot_form($actionurl, $scheduler, $cm, $groupsicansee);
 
     if ($mform->is_cancelled()) {
-        redirect($returnurl);
+        redirect($viewurl);
     } else if ($formdata = $mform->get_data()) {
         $slot = $mform->save_slot(0, $formdata);
         \mod_scheduler\event\slot_added::create_from_slot($slot)->trigger();
-        echo $output->action_message(get_string('oneslotadded', 'scheduler'));
+        redirect($viewurl,
+                 get_string('oneslotadded', 'scheduler'),
+                 0,
+                 \core\output\notification::NOTIFY_SUCCESS);
     } else {
+        echo $output->header();
         echo $output->heading(get_string('addsingleslot', 'scheduler'));
         $mform->display();
         echo $output->footer($course);
@@ -145,11 +163,7 @@ if ($action == 'updateslot') {
         $timeoptions = array('step' => 5, 'optional' => false);
     }
 
-    $actionurl = new moodle_url('/mod/scheduler/view.php',
-                    array('what' => 'updateslot', 'id' => $cm->id, 'slotid' => $slotid,
-                          'subpage' => $subpage, 'offset' => $offset));
-    $returnurl = new moodle_url('/mod/scheduler/view.php',
-                    array('what' => 'view', 'id' => $cm->id, 'subpage' => $subpage, 'offset' => $offset));
+    $actionurl = new moodle_url($baseurl, array('what' => 'updateslot', 'slotid' => $slotid));
 
     $mform = new scheduler_editslot_form($actionurl, $scheduler, $cm, $groupsicansee, array(
             'slotid' => $slotid,
@@ -159,11 +173,15 @@ if ($action == 'updateslot') {
     $mform->set_data($data);
 
     if ($mform->is_cancelled()) {
-        redirect($returnurl);
+        redirect($viewurl);
     } else if ($formdata = $mform->get_data()) {
         $mform->save_slot($slotid, $formdata);
-        echo $output->action_message(get_string('slotupdated', 'scheduler'));
+        redirect($viewurl,
+                 get_string('slotupdated', 'scheduler'),
+                 0,
+                 \core\output\notification::NOTIFY_SUCCESS);
     } else {
+        echo $output->header();
         echo $output->heading(get_string('updatesingleslot', 'scheduler'));
         $mform->display();
         echo $output->footer($course);
@@ -174,22 +192,20 @@ if ($action == 'updateslot') {
 /************************************ Add session multiple slots form ****************************************/
 if ($action == 'addsession') {
 
-    $actionurl = new moodle_url('/mod/scheduler/view.php',
-                    array('what' => 'addsession', 'id' => $cm->id, 'subpage' => $subpage));
-    $returnurl = new moodle_url('/mod/scheduler/view.php',
-                    array('what' => 'view', 'id' => $cm->id, 'subpage' => $subpage));
+    $actionurl = new moodle_url($baseurl, array('what' => 'addsession'));
 
     if (!$scheduler->has_available_teachers()) {
-        print_error('needteachers', 'scheduler', $returnurl);
+        print_error('needteachers', 'scheduler', $viewurl);
     }
 
     $mform = new scheduler_addsession_form($actionurl, $scheduler, $cm, $groupsicansee);
 
     if ($mform->is_cancelled()) {
-        redirect($returnurl);
+        redirect($viewurl);
     } else if ($formdata = $mform->get_data()) {
-        scheduler_action_doaddsession($scheduler, $formdata);
+        scheduler_action_doaddsession($scheduler, $formdata, $viewurl);
     } else {
+        echo $output->header();
         echo $output->heading(get_string('addsession', 'scheduler'));
         $mform->display();
         echo $output->footer();
@@ -199,14 +215,14 @@ if ($action == 'addsession') {
 
 /************************************ Schedule a student form ***********************************************/
 if ($action == 'schedule') {
+    echo $output->header();
+
     if ($subaction == 'dochooseslot') {
         $slotid = required_param('slotid', PARAM_INT);
         $slot = $scheduler->get_slot($slotid);
         $studentid = required_param('studentid', PARAM_INT);
 
-        $actionurl = new moodle_url('/mod/scheduler/view.php', array('what' => 'updateslot', 'id' => $cm->id, 'slotid' => $slotid));
-        $returnurl = new moodle_url('/mod/scheduler/view.php', array('what' => 'view', 'id' => $cm->id));
-
+        $actionurl = new moodle_url($baseurl, array('what' => 'updateslot', 'slotid' => $slotid));
 
         $repeats = $slot->get_appointment_count() + 1;
         $mform = new scheduler_editslot_form($actionurl, $scheduler, $cm, $groupsicansee,
@@ -222,14 +238,14 @@ if ($action == 'schedule') {
         $studentid = required_param('studentid', PARAM_INT);
         $student = $DB->get_record('user', array('id' => $studentid), '*', MUST_EXIST);
 
-        $actionurl = new moodle_url('/mod/scheduler/view.php', array('what' => 'addslot', 'id' => $cm->id));
-        $returnurl = new moodle_url('/mod/scheduler/view.php', array('what' => 'view', 'id' => $cm->id));
+        $actionurl = new moodle_url($baseurl, array('what' => 'addslot'));
 
         $mform = new scheduler_editslot_form($actionurl, $scheduler, $cm, $groupsicansee);
 
         $data = array();
         $data['studentid'][0] = $studentid;
         $mform->set_data($data);
+
         echo $output->heading(get_string('scheduleappointment', 'scheduler', fullname($student)));
 
         scheduler_print_schedulebox($scheduler, $studentid);
@@ -250,14 +266,15 @@ if ($action == 'schedulegroup') {
     $group = $DB->get_record('groups', array('id' => $groupid), '*', MUST_EXIST);
     $members = groups_get_members($groupid);
 
+    echo $output->header();
+
     if ($subaction == 'dochooseslot') {
 
         $slotid = required_param('slotid', PARAM_INT);
         $groupid = required_param('groupid', PARAM_INT);
         $slot = $scheduler->get_slot($slotid);
 
-        $actionurl = new moodle_url('/mod/scheduler/view.php', array('what' => 'updateslot', 'id' => $cm->id, 'slotid' => $slotid));
-        $returnurl = new moodle_url('/mod/scheduler/view.php', array('what' => 'view', 'id' => $cm->id));
+        $actionurl = new moodle_url($baseurl, array('what' => 'updateslot', 'slotid' => $slotid));
 
         $repeats = $slot->get_appointment_count() + count($members);
         $mform = new scheduler_editslot_form($actionurl, $scheduler, $cm, $groupsicansee,
@@ -273,8 +290,7 @@ if ($action == 'schedulegroup') {
 
     } else if (empty($subaction)) {
 
-        $actionurl = new moodle_url('/mod/scheduler/view.php', array('what' => 'addslot', 'id' => $cm->id));
-        $returnurl = new moodle_url('/mod/scheduler/view.php', array('what' => 'view', 'id' => $cm->id));
+        $actionurl = new moodle_url($baseurl, array('what' => 'addslot'));
 
         $data = array();
         $i = 0;
@@ -311,8 +327,6 @@ if ($action == 'sendmessage') {
     $actionurl = new moodle_url('/mod/scheduler/view.php',
             array('what' => 'sendmessage', 'id' => $cm->id, 'subpage' => $subpage,
                   'template' => $template, 'recipients' => $recipientids));
-    $returnurl = new moodle_url('/mod/scheduler/view.php',
-            array('what' => 'view', 'id' => $cm->id, 'subpage' => $subpage));
 
     $templatedata = array();
     if ($template != 'none') {
@@ -325,10 +339,11 @@ if ($action == 'sendmessage') {
     $mform = new scheduler_message_form($actionurl, $scheduler, $templatedata);
 
     if ($mform->is_cancelled()) {
-        redirect($returnurl);
+        redirect($viewurl);
     } else if ($formdata = $mform->get_data()) {
-        scheduler_action_dosendmessage($scheduler, $formdata);
+        scheduler_action_dosendmessage($scheduler, $formdata, $viewurl);
     } else {
+        echo $output->header();
         echo $output->heading(get_string('sendmessage', 'scheduler'));
         $mform->display();
         echo $output->footer();
@@ -346,7 +361,7 @@ if ($action == 'sendmessage') {
 
 // Print top tabs.
 
-$actionurl = new moodle_url($taburl, array('offset' => $offset, 'sesskey' => sesskey()));
+$actionurl = new moodle_url($viewurl, array('sesskey' => sesskey()));
 
 $inactive = array();
 if ($DB->count_records('scheduler_slots', array('schedulerid' => $scheduler->id)) <=
@@ -357,6 +372,8 @@ if ($DB->count_records('scheduler_slots', array('schedulerid' => $scheduler->id)
         $subpage = 'myappointments';
     }
 }
+
+echo $output->header();
 
 echo $output->teacherview_tabs($scheduler, $taburl, $subpage, $inactive);
 if ($groupmode) {
@@ -382,23 +399,28 @@ echo $output->mod_intro($scheduler);
 
 if ($subpage == 'allappointments') {
     $teacherid = 0;
+    $slotgroup = $currentgroup;
 } else {
     $teacherid = $USER->id;
+    $slotgroup = 0;
     $subpage = 'myappointments';
 }
-$sqlcount = $scheduler->count_slots_for_teacher($teacherid, $currentgroup);
+$sqlcount = $scheduler->count_slots_for_teacher($teacherid, $slotgroup);
 
 $pagesize = 25;
 if ($offset == -1) {
     if ($sqlcount > $pagesize) {
-        $offsetcount = $scheduler->count_slots_for_teacher($teacherid, $currentgroup, true);
+        $offsetcount = $scheduler->count_slots_for_teacher($teacherid, $slotgroup, true);
         $offset = floor($offsetcount / $pagesize);
     } else {
         $offset = 0;
     }
 }
+if ($offset * $pagesize >= $sqlcount && $sqlcount > 0) {
+    $offset = floor(($sqlcount-1) / $pagesize);
+}
 
-$slots = $scheduler->get_slots_for_teacher($teacherid, $currentgroup, $offset * $pagesize, $pagesize);
+$slots = $scheduler->get_slots_for_teacher($teacherid, $slotgroup, $offset * $pagesize, $pagesize);
 
 echo $output->heading(get_string('slots', 'scheduler'));
 
@@ -467,7 +489,7 @@ if ($slots) {
         $studlist->buttontext = get_string('saveseen', 'scheduler');
         $studlist->actionurl = new moodle_url($actionurl, array('what' => 'saveseen', 'slotid' => $slot->id));
         foreach ($slot->get_appointments() as $app) {
-            $studlist->add_student($app, false, $app->is_attended());
+            $studlist->add_student($app, false, $app->is_attended(), true, $scheduler->uses_studentdata());
         }
 
         $slotman->add_slot($slot, $studlist, $editable);
@@ -487,10 +509,21 @@ if ($slots) {
 $groupfilter = ($subpage == 'myappointments') ? $groupsthatcanseeme : $groupsicurrentlysee;
 $maxlistsize = get_config('mod_scheduler', 'maxstudentlistsize');
 $students = array();
+$reminderstudents = array();
 if ($groupfilter === '') {
     $students = $scheduler->get_students_for_scheduling('', $maxlistsize);
+    if ($scheduler->allows_unlimited_bookings()) {
+        $reminderstudents  = $scheduler->get_students_for_scheduling('', $maxlistsize, true);
+    } else {
+        $reminderstudents = $students;
+    }
 } else if (count($groupfilter) > 0) {
     $students = $scheduler->get_students_for_scheduling(array_keys($groupfilter), $maxlistsize);
+    if ($scheduler->allows_unlimited_bookings()) {
+        $reminderstudents = $scheduler->get_students_for_scheduling(array_keys($groupfilter), $maxlistsize, true);
+    } else {
+        $reminderstudents = $students;
+    }
 }
 
 if ($students === 0) {
@@ -506,26 +539,27 @@ if ($students === 0) {
 
 } else if (count($students) > 0) {
 
-    $studids = implode(',', array_keys($students));
+    if (count($reminderstudents) > 0) {
+        $studids = implode(',', array_keys($reminderstudents));
 
-    $messageurl = new moodle_url($actionurl, array('what' => 'sendmessage', 'recipients' => $studids));
-    $invitationurl = new moodle_url($messageurl, array('template' => 'invite'));
-    $reminderurl = new moodle_url($messageurl, array('template' => 'invitereminder'));
+        $messageurl = new moodle_url($actionurl, array('what' => 'sendmessage', 'recipients' => $studids));
+        $invitationurl = new moodle_url($messageurl, array('template' => 'invite'));
+        $reminderurl = new moodle_url($messageurl, array('template' => 'invitereminder'));
 
-    $maildisplay = '';
-    $maildisplay .= html_writer::link($invitationurl, get_string('sendinvitation', 'scheduler'));
-    $maildisplay .= ' &mdash; ';
-    $maildisplay .= html_writer::link($reminderurl, get_string('sendreminder', 'scheduler'));
+        $maildisplay = '';
+        $maildisplay .= html_writer::link($invitationurl, get_string('sendinvitation', 'scheduler'));
+        $maildisplay .= ' &mdash; ';
+        $maildisplay .= html_writer::link($reminderurl, get_string('sendreminder', 'scheduler'));
 
-    echo $output->box_start('maildisplay');
-    // Print number of students who still have to make an appointment.
-    echo $output->heading(get_string('missingstudents', 'scheduler', count($students)), 3);
-    // Print e-mail addresses and mailto links.
-    echo $maildisplay;
-    echo $output->box_end();
+        echo $output->box_start('maildisplay');
+        // Print number of students who still have to make an appointment.
+        echo $output->heading(get_string('missingstudents', 'scheduler', count($reminderstudents)), 3);
+        // Print e-mail addresses and mailto links.
+        echo $maildisplay;
+        echo $output->box_end();
+    }
 
-
-    $userfields = scheduler_get_user_fields(null);
+    $userfields = scheduler_get_user_fields(null, $context);
     $fieldtitles = array();
     foreach ($userfields as $f) {
         $fieldtitles[] = $f->title;
@@ -546,7 +580,7 @@ if ($students === 0) {
                         new pix_icon('t/approve', '', 'moodle'),
                         get_string('markasseennow', 'scheduler') );
 
-        $userfields = scheduler_get_user_fields($student);
+        $userfields = scheduler_get_user_fields($student, $context);
         $fieldvals = array();
         foreach ($userfields as $f) {
             $fieldvals[] = $f->value;
